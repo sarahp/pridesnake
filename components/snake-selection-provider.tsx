@@ -12,9 +12,8 @@ import {
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 type SnakeSelection = {
-  head: string | null
-  color: string | null
-  selectHead: (head: string, color: string) => void
+  style: string | null
+  selectHead: (styleId: string) => void
 }
 
 const SnakeSelectionContext = createContext<SnakeSelection | null>(null)
@@ -23,37 +22,31 @@ export function SnakeSelectionProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const [pending, setPending] = useState<{ head: string; color: string } | null>(null)
+  const [pending, setPending] = useState<string | null>(null)
 
-  const head = pending?.head ?? searchParams.get('head')
-  const color = pending?.color ?? searchParams.get('color')
+  const style = pending ?? searchParams.get('style')
 
   useEffect(() => {
     if (!pending) return
-    if (
-      searchParams.get('head') === pending.head &&
-      searchParams.get('color') === pending.color
-    ) {
+    if (searchParams.get('style') === pending) {
       setPending(null)
     }
   }, [searchParams, pending])
 
   const selectHead = useCallback(
-    (id: string, nextColor: string) => {
-      setPending({ head: id, color: nextColor })
+    (styleId: string) => {
+      setPending(styleId)
 
       const params = new URLSearchParams(searchParams.toString())
-      params.set('head', id)
-      params.set('color', nextColor)
+      params.set('style', styleId)
+      params.delete('head')
+      params.delete('color')
       router.replace(`${pathname}?${params.toString()}`, { scroll: false })
     },
     [pathname, router, searchParams],
   )
 
-  const value = useMemo(
-    () => ({ head, color, selectHead }),
-    [head, color, selectHead],
-  )
+  const value = useMemo(() => ({ style, selectHead }), [style, selectHead])
 
   return (
     <SnakeSelectionContext.Provider value={value}>{children}</SnakeSelectionContext.Provider>

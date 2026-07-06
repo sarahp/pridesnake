@@ -46,32 +46,61 @@ export const snakeInfo: SnakeInfo = {
   apiversion: '1',
   author: 'SarahPeony',
   color: '#a855f7', // pride purple
-  head: 'default',
-  tail: 'rbc-necktie',
+  head: 'trans-rights-scarf',
+  tail: 'default',
   version: '1.0.0-pride',
 }
 
 export type PrideHeadOption = {
   id: string
+  battlesnakeHead: string
   src: string
   name: string
   flag: string
   color: string
 }
 
-// Gallery picks map to Battlesnake customization IDs from play.battlesnake.com/customizations.
+// Gallery PNGs are site previews. In-game, all flags use the unlocked trans-rights-scarf head
+// with a flag-specific body color until more Battlesnake heads are unlocked.
 export const prideHeadOptions: PrideHeadOption[] = [
-  { id: 'pixel', src: '/heads/rainbow.png', name: 'Rainbow', flag: 'Classic Pride', color: '#750787' },
   {
-    id: 'trans-rights-scarf',
+    id: 'rainbow',
+    battlesnakeHead: 'trans-rights-scarf',
+    src: '/heads/rainbow.png',
+    name: 'Rainbow',
+    flag: 'Classic Pride',
+    color: '#750787',
+  },
+  {
+    id: 'trans',
+    battlesnakeHead: 'trans-rights-scarf',
     src: '/heads/trans.png',
     name: 'Azure',
     flag: 'Trans Pride',
     color: '#5BCEFA',
   },
-  { id: 'smile', src: '/heads/bi.png', name: 'Magenta', flag: 'Bi Pride', color: '#D60270' },
-  { id: 'rose', src: '/heads/lesbian.png', name: 'Sunset', flag: 'Lesbian Pride', color: '#D52D00' },
+  {
+    id: 'bi',
+    battlesnakeHead: 'trans-rights-scarf',
+    src: '/heads/bi.png',
+    name: 'Magenta',
+    flag: 'Bi Pride',
+    color: '#D60270',
+  },
+  {
+    id: 'lesbian',
+    battlesnakeHead: 'trans-rights-scarf',
+    src: '/heads/lesbian.png',
+    name: 'Sunset',
+    flag: 'Lesbian Pride',
+    color: '#D52D00',
+  },
 ]
+
+export function getPrideHeadOption(style: string | null): PrideHeadOption | undefined {
+  if (!style) return undefined
+  return prideHeadOptions.find((option) => option.id === style)
+}
 
 const CUSTOMIZATION_ID = /^[a-z0-9-]+$/
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
@@ -88,13 +117,21 @@ function hexColor(value: string | null): string | undefined {
 
 export function buildSnakeQuery(searchParams: URLSearchParams): string {
   const params = new URLSearchParams()
-  const head = customizationId(searchParams.get('head'))
-  const tail = customizationId(searchParams.get('tail'))
-  const color = hexColor(searchParams.get('color'))
 
-  if (head) params.set('head', head)
+  const style = searchParams.get('style')
+  const prideOption = getPrideHeadOption(style)
+  if (prideOption) {
+    params.set('head', prideOption.battlesnakeHead)
+    params.set('color', prideOption.color)
+  } else {
+    const head = customizationId(searchParams.get('head'))
+    const color = hexColor(searchParams.get('color'))
+    if (head) params.set('head', head)
+    if (color) params.set('color', color)
+  }
+
+  const tail = customizationId(searchParams.get('tail'))
   if (tail) params.set('tail', tail)
-  if (color) params.set('color', color)
 
   const query = params.toString()
   return query ? `?${query}` : ''

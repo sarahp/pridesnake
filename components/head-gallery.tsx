@@ -6,18 +6,18 @@ import { prideHeadOptions } from '@/lib/snake'
 import { useSnakeSelection } from '@/components/snake-selection-provider'
 
 export function HeadGallery() {
-  const { head: selectedHead, selectHead } = useSnakeSelection()
+  const { style: selectedStyle, selectHead } = useSnakeSelection()
 
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
       {prideHeadOptions.map((head) => {
-        const selected = selectedHead === head.id
+        const selected = selectedStyle === head.id
 
         return (
           <button
             key={head.id}
             type="button"
-            onClick={() => selectHead(head.id, head.color)}
+            onClick={() => selectHead(head.id)}
             aria-pressed={selected}
             className={`group flex cursor-pointer flex-col items-center rounded-2xl border bg-card p-5 text-center transition-all hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
               selected

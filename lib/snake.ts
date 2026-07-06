@@ -279,6 +279,107 @@ function maxEnemyLength(board: Board, youId: string): number {
     .reduce((max, snake) => Math.max(max, snake.length), 0)
 }
 
+function possibleNextHeads(
+  snake: Battlesnake,
+  board: Board,
+  occupied: Set<string>,
+  hazards: Set<string>,
+  aggressive: boolean,
+): Coord[] {
+  const heads: Coord[] = []
+  for (const dir of Object.values(MOVES)) {
+    const target = { x: snake.head.x + dir.x, y: snake.head.y + dir.y }
+    if (!inBounds(target, board)) continue
+    if (!canEnterCell(target, snake, board, occupied, hazards, aggressive)) continue
+    heads.push(target)
+  }
+  return heads
+}
+
+function predictedEnemyNextHead(
+  enemy: Battlesnake,
+  state: GameState,
+): Coord | null {
+  const { move } = chooseMove({ ...state, you: enemy })
+  return { x: enemy.head.x + MOVES[move].x, y: enemy.head.y + MOVES[move].y }
+}
+
+function headCollisionRisk(
+  target: Coord,
+  you: Battlesnake,
+  board: Board,
+  occupied: Set<string>,
+  hazards: Set<string>,
+  state: GameState,
+): { predicted: boolean; possible: boolean } {
+  const tk = key(target)
+  let predicted = false
+  let possible = false
+  for (const snake of board.snakes) {
+    if (snake.id === you.id || snake.length < you.length) continue
+    const nextHead = predictedEnemyNextHead(snake, state)
+    if (nextHead && key(nextHead) === tk) predicted = true
+    for (const possibleHead of possibleNextHeads(snake, board, occupied, hazards, false)) {
+      if (key(possibleHead) === tk) possible = true
+    }
+  }
+  return { predicted, possible }
+}
+
+function nearestUncontestedFoodPathDistance(
+  from: Coord,
+  you: Battlesnake,
+  board: Board,
+  blocked: Set<string>,
+): number | null {
+  let best: number | null = null
+  for (const food of board.food) {
+    const ourDist = bfsDistance(from, food, board, blocked)
+    if (ourDist === null) continue
+
+    let contested = false
+    for (const snake of board.snakes) {
+      if (snake.id === you.id || snake.length < you.length) continue
+      const enemyDist = bfsDistance(snake.head, food, board, blocked)
+      if (enemyDist !== null && enemyDist <= ourDist) {
+        contested = true
+        break
+      }
+    }
+    if (contested) continue
+    if (best === null || ourDist < best) best = ourDist
+  }
+  return best
+}
+
+function minDangerousEnemyDistance(from: Coord, you: Battlesnake, board: Board): number {
+  let best = Infinity
+  for (const snake of board.snakes) {
+    if (snake.id === you.id || snake.length < you.length) continue
+    const dist = Math.abs(from.x - snake.head.x) + Math.abs(from.y - snake.head.y)
+    if (dist < best) best = dist
+  }
+  return best
+}
+
+function towardStrongerEnemyPenalty(
+  target: Coord,
+  you: Battlesnake,
+  board: Board,
+): number {
+  let penalty = 0
+  for (const snake of board.snakes) {
+    if (snake.id === you.id || snake.length <= you.length) continue
+    const before =
+      Math.abs(you.head.x - snake.head.x) + Math.abs(you.head.y - snake.head.y)
+    const after =
+      Math.abs(target.x - snake.head.x) + Math.abs(target.y - snake.head.y)
+    if (after < before) penalty += 60
+    if (target.x === snake.head.x || target.y === snake.head.y) penalty += 30
+  }
+  return penalty
+}
+
 function blockedForCandidate(
   you: Battlesnake,
   target: Coord,
@@ -445,26 +546,43 @@ export function chooseMove(
     const huntPhase = you.length > maxEnemy
 
     // Grow phase: avoid equal-length head-to-head; hunt phase: take calculated risks.
-    const aggressivePool =
-      growPhase && preferred.length > 0 ? preferred : pool
+    let aggressivePool = growPhase && preferred.length > 0 ? preferred : pool
+
+    if (growPhase) {
+      const collisionSafe = aggressivePool.filter((c) => {
+        const risk = headCollisionRisk(c.target, you, board, occupied, hazards, state)
+        return !risk.predicted
+      })
+      if (collisionSafe.length > 0) aggressivePool = collisionSafe
+    }
 
     let best = aggressivePool[0]
     let bestScore = -Infinity
     let shoutContext: keyof typeof LESBIAN_SHOUTS = growPhase ? 'food' : 'default'
 
-    const spaceWeight = growPhase ? 2 : 0.5
-    const foodWeight = growPhase ? (state.turn < 20 ? 8 : 6) : 5
+    const spaceWeight = behind ? 4 : growPhase ? 2 : 0.5
+    const foodWeight = behind ? 2 : growPhase ? (state.turn < 20 ? 8 : 6) : 5
     const riskyPenalty = growPhase ? 200 : 40
+    const behind = you.length < maxEnemy
 
     for (const c of aggressivePool) {
       const blocked = blockedForCandidate(you, c.target, board, occupied, true)
       let score = c.space * spaceWeight
 
       if (eatingAt(c.target, board)) {
-        score += 80
-        shoutContext = 'food'
+        const contested = nearestUncontestedFoodPathDistance(c.target, you, board, blocked) === null
+        if (!contested || !growPhase) {
+          score += 80
+          shoutContext = 'food'
+        } else {
+          score -= 60
+        }
       } else if (board.food.length > 0) {
-        const foodDist = nearestFoodPathDistance(c.target, board, blocked)
+        const foodDist =
+          growPhase || behind
+            ? (nearestUncontestedFoodPathDistance(c.target, you, board, blocked) ??
+              nearestFoodPathDistance(c.target, board, blocked))
+            : nearestFoodPathDistance(c.target, board, blocked)
         if (foodDist !== null) {
           score -= foodDist * foodWeight
           if (foodDist <= 2) shoutContext = 'food'
@@ -487,6 +605,13 @@ export function chooseMove(
       }
 
       if (c.risky) score -= riskyPenalty
+      const collisionRisk = headCollisionRisk(c.target, you, board, occupied, hazards, state)
+      if (collisionRisk.predicted) score -= 1000
+      else if (collisionRisk.possible && (growPhase || behind)) score -= 250
+      if (behind) {
+        score += minDangerousEnemyDistance(c.target, you, board) * 4
+        score -= towardStrongerEnemyPenalty(c.target, you, board)
+      }
 
       if (score > bestScore) {
         bestScore = score

@@ -242,26 +242,35 @@ function reachableSpace(start: Coord, board: Board, blocked: Set<string>): numbe
   return count
 }
 
-function canReach(from: Coord, goal: Coord, board: Board, blocked: Set<string>): boolean {
-  if (from.x === goal.x && from.y === goal.y) return true
+function bfsDistance(from: Coord, goal: Coord, board: Board, blocked: Set<string>): number | null {
+  if (from.x === goal.x && from.y === goal.y) return 0
   const seen = new Set<string>([key(from)])
-  const queue: Coord[] = [from]
+  const queue: { cell: Coord; dist: number }[] = [{ cell: from, dist: 0 }]
   while (queue.length > 0) {
-    const cell = queue.shift()!
+    const { cell, dist } = queue.shift()!
     for (const dir of Object.values(MOVES)) {
       const next = { x: cell.x + dir.x, y: cell.y + dir.y }
-      if (next.x === goal.x && next.y === goal.y) return true
+      if (next.x === goal.x && next.y === goal.y) return dist + 1
       const k = key(next)
       if (!inBounds(next, board) || blocked.has(k) || seen.has(k)) continue
       seen.add(k)
-      queue.push(next)
+      queue.push({ cell: next, dist: dist + 1 })
     }
   }
-  return false
+  return null
 }
 
-function distance(a: Coord, b: Coord) {
-  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
+function canReach(from: Coord, goal: Coord, board: Board, blocked: Set<string>): boolean {
+  return bfsDistance(from, goal, board, blocked) !== null
+}
+
+function nearestFoodPathDistance(from: Coord, board: Board, blocked: Set<string>): number | null {
+  let best: number | null = null
+  for (const food of board.food) {
+    const dist = bfsDistance(from, food, board, blocked)
+    if (dist !== null && (best === null || dist < best)) best = dist
+  }
+  return best
 }
 
 function hazardCells(board: Board): Set<string> {
@@ -419,23 +428,33 @@ export function chooseMove(
     let shoutContext: keyof typeof LESBIAN_SHOUTS = 'default'
 
     for (const c of pool) {
+      let blocked = blockedAfterMove(you, c.target, board, occupied)
+      if (isKillHead(c.target, you, board)) {
+        for (const snake of board.snakes) {
+          if (snake.id === you.id || snake.length >= you.length) continue
+          if (snake.head.x === c.target.x && snake.head.y === c.target.y) {
+            blocked.delete(key(snake.head))
+          }
+        }
+      }
+
       let score = c.space * 0.5
 
       if (eatingAt(c.target, board)) {
         score += 80
         shoutContext = 'food'
       } else if (board.food.length > 0) {
-        const nearestFood = board.food.reduce(
-          (min, f) => Math.min(min, distance(c.target, f)),
-          Infinity,
-        )
-        score -= nearestFood * 5
-        if (nearestFood <= 2) shoutContext = 'food'
+        const foodDist = nearestFoodPathDistance(c.target, board, blocked)
+        if (foodDist !== null) {
+          score -= foodDist * 5
+          if (foodDist <= 2) shoutContext = 'food'
+        }
       }
 
       for (const snake of board.snakes) {
         if (snake.id === you.id || snake.length >= you.length) continue
-        const preyDist = distance(c.target, snake.head)
+        const preyDist = bfsDistance(c.target, snake.head, board, blocked)
+        if (preyDist === null) continue
         score -= preyDist * 4
         if (c.target.x === snake.head.x && c.target.y === snake.head.y) {
           score += 120
@@ -456,28 +475,29 @@ export function chooseMove(
     return { move: best.move, shout: lesbianShout(shoutContext) }
   }
 
-  // Hungry? Steer toward the closest food when health is getting low.
-  const hungry = you.health < 40 || board.snakes.length > 1
+  // Pathfind to reachable food; fall back to maximizing open space.
   let best = pool[0]
 
-  if (hungry && board.food.length > 0) {
+  if (board.food.length > 0) {
     let bestScore = -Infinity
+    const foodWeight = you.health < 40 ? 4 : board.snakes.length > 1 ? 2 : 3
+
     for (const c of pool) {
-      const nearestFood = board.food.reduce(
-        (min, f) => Math.min(min, distance(c.target, f)),
-        Infinity,
-      )
-      // Balance chasing food with keeping options open.
-      const score = c.space * 2 - nearestFood * (you.health < 40 ? 3 : 1)
+      const blocked = blockedAfterMove(you, c.target, board, occupied)
+      const foodDist = nearestFoodPathDistance(c.target, board, blocked)
+      const score =
+        c.space * 2 - (foodDist ?? 999) * foodWeight + (eatingAt(c.target, board) ? 50 : 0)
       if (score > bestScore) {
         bestScore = score
         best = c
       }
     }
   } else {
-    // Otherwise just maximize breathing room.
     best = pool.reduce((a, b) => (b.space > a.space ? b : a), pool[0])
   }
 
-  return { move: best.move, shout: 'slithering with pride 🏳️‍🌈' }
+  return {
+    move: best.move,
+    shout: eatingAt(best.target, board) ? 'nom time 🏳️‍🌈' : 'slithering with pride 🏳️‍🌈',
+  }
 }

@@ -12,15 +12,19 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 export function LiveSnakeInfo() {
   const searchParams = useSearchParams()
-  const { head, color } = useSnakeSelection()
+  const { style } = useSnakeSelection()
   const apiPath = useMemo(() => {
     const params = new URLSearchParams()
-    const resolvedHead = head ?? searchParams.get('head')
-    const resolvedColor = color ?? searchParams.get('color')
-    if (resolvedHead) params.set('head', resolvedHead)
-    if (resolvedColor) params.set('color', resolvedColor)
+    if (style) {
+      params.set('style', style)
+    } else {
+      const head = searchParams.get('head')
+      const color = searchParams.get('color')
+      if (head) params.set('head', head)
+      if (color) params.set('color', color)
+    }
     return buildSnakeApiPath(params)
-  }, [head, color, searchParams])
+  }, [style, searchParams])
 
   const { data, error, isLoading } = useSWR<SnakeInfo>(apiPath, fetcher, {
     refreshInterval: 15000,

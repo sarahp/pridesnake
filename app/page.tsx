@@ -82,7 +82,9 @@ export default function Page() {
               Pick your pride head
             </h2>
             <p className="mt-2 text-muted-foreground">
-              Tap a head to build your snake URL — the preview below updates instantly.
+              Tap a head to build your snake URL — the preview below updates instantly. Gallery art
+              is for this site; on the Battlesnake board all flags use the trans-rights-scarf head
+              with a flag color.
             </p>
             <div className="mt-6">
               <HeadGallery />

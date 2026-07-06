@@ -1,23 +1,145 @@
+import Image from 'next/image'
+import { LiveSnakeInfo } from '@/components/live-snake-info'
+import { HeadGallery } from '@/components/head-gallery'
+
+const RAINBOW = ['#e40303', '#ff8c00', '#ffed00', '#008026', '#004dff', '#750787']
+
+function RainbowBar() {
+  return (
+    <div className="flex h-2 w-full overflow-hidden rounded-full" aria-hidden>
+      {RAINBOW.map((c) => (
+        <span key={c} className="flex-1" style={{ backgroundColor: c }} />
+      ))}
+    </div>
+  )
+}
+
+const endpoints = [
+  { method: 'GET', path: '/api/snake', desc: 'Snake appearance & metadata' },
+  { method: 'POST', path: '/api/snake/start', desc: 'Fires when a game begins' },
+  { method: 'POST', path: '/api/snake/move', desc: 'Returns a move each turn' },
+  { method: 'POST', path: '/api/snake/end', desc: 'Fires when a game ends' },
+]
+
 export default function Page() {
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-[color:light-dark(#fff,#000)] text-[color:light-dark(#000,#fff)]">
-      <svg
-        aria-hidden="true"
-        className="size-20"
-        fill="none"
-        viewBox="0 0 20 20"
-        xmlns="http://www.w3.org/2000/svg"
-        stroke="currentColor"
-        strokeWidth="0.5"
-      >
-        <path
-          d="M14.2 14.2H17V6.9375C17 4.76288 15.2371 3 13.0625 3H5.8V5.8M14.2 14.2V7.79063L7.79062 14.2H14.2ZM14.2 14.2V17H6.9375C4.76288 17 3 15.2371 3 13.0625V5.8H5.8M5.8 5.8V12.2313L12.2313 5.8H5.8Z"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <p className="absolute left-1/2 top-[calc(50%+56px)] -translate-x-1/2 whitespace-nowrap text-sm font-medium text-muted-foreground">
-        Your v0 generation will show here.
-      </p>
+    <main className="mx-auto max-w-5xl px-5 py-16 md:py-24">
+      {/* Hero */}
+      <header className="text-center">
+        <div className="mx-auto mb-8 flex justify-center gap-3">
+          {['/heads/rainbow.png', '/heads/trans.png', '/heads/bi.png', '/heads/lesbian.png'].map(
+            (src) => (
+              <div
+                key={src}
+                className="size-14 overflow-hidden rounded-xl border border-border md:size-16"
+              >
+                <Image
+                  src={src || '/placeholder.svg'}
+                  alt=""
+                  width={64}
+                  height={64}
+                  className="size-full [image-rendering:pixelated]"
+                />
+              </div>
+            ),
+          )}
+        </div>
+        <p className="font-mono text-sm uppercase tracking-[0.3em] text-accent">
+          Battlesnake · Meetup Edition
+        </p>
+        <h1 className="mt-4 text-balance text-5xl font-bold leading-[1.05] tracking-tight md:text-7xl">
+          PrideSnake
+        </h1>
+        <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground md:text-xl">
+          A gloriously queer Battlesnake server, hosted for the meetup. Point your board here, pick
+          a pride-flag head, and let the smartest snake slither out on top.
+        </p>
+        <div className="mx-auto mt-10 max-w-sm">
+          <RainbowBar />
+        </div>
+      </header>
+
+      {/* Live status */}
+      <section className="mt-20" aria-labelledby="live-heading">
+        <h2 id="live-heading" className="sr-only">
+          Live server info
+        </h2>
+        <LiveSnakeInfo />
+      </section>
+
+      {/* Endpoints */}
+      <section className="mt-20" aria-labelledby="endpoints-heading">
+        <h2 id="endpoints-heading" className="text-2xl font-bold tracking-tight md:text-3xl">
+          The endpoints
+        </h2>
+        <p className="mt-2 text-muted-foreground">
+          Standard Battlesnake API, served from Next.js route handlers.
+        </p>
+        <div className="mt-6 overflow-hidden rounded-2xl border border-border">
+          {endpoints.map((e, i) => (
+            <div
+              key={e.path}
+              className={`flex flex-col gap-2 bg-card p-5 sm:flex-row sm:items-center sm:gap-6 ${
+                i !== 0 ? 'border-t border-border' : ''
+              }`}
+            >
+              <span
+                className={`inline-flex w-fit shrink-0 items-center rounded-md px-2.5 py-1 font-mono text-xs font-semibold ${
+                  e.method === 'GET'
+                    ? 'bg-chart-3/20 text-chart-3'
+                    : 'bg-primary/20 text-primary'
+                }`}
+              >
+                {e.method}
+              </span>
+              <code className="font-mono text-sm text-card-foreground">{e.path}</code>
+              <span className="text-sm text-muted-foreground sm:ml-auto">{e.desc}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Head gallery */}
+      <section className="mt-20" aria-labelledby="gallery-heading">
+        <h2 id="gallery-heading" className="text-2xl font-bold tracking-tight md:text-3xl">
+          Pick your pride head
+        </h2>
+        <p className="mt-2 text-muted-foreground">
+          Every snake deserves to compete as its truest, most fabulous self.
+        </p>
+        <div className="mt-6">
+          <HeadGallery />
+        </div>
+      </section>
+
+      {/* How to connect */}
+      <section className="mt-20" aria-labelledby="connect-heading">
+        <h2 id="connect-heading" className="text-2xl font-bold tracking-tight md:text-3xl">
+          Play at the meetup
+        </h2>
+        <ol className="mt-6 space-y-4">
+          {[
+            'Sign in at play.battlesnake.com and create a new Battlesnake.',
+            'Copy the server URL above and paste it as your snake URL.',
+            'Join the meetup arena or start a friendly game with the crew.',
+            'Cheer as the pride-flag snakes battle for the top spot.',
+          ].map((step, i) => (
+            <li key={i} className="flex gap-4 rounded-2xl border border-border bg-card p-5">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary font-mono text-sm font-semibold text-primary-foreground">
+                {i + 1}
+              </span>
+              <p className="pt-1 leading-relaxed text-card-foreground">{step}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <footer className="mt-20 flex flex-col items-center gap-6">
+        <RainbowBar />
+        <p className="text-center font-mono text-sm text-muted-foreground">
+          Built with pride for the meetup · Happy slithering 🏳️‍🌈
+        </p>
+      </footer>
     </main>
   )
 }

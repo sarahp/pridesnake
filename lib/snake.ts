@@ -273,6 +273,31 @@ function nearestFoodPathDistance(from: Coord, board: Board, blocked: Set<string>
   return best
 }
 
+function maxEnemyLength(board: Board, youId: string): number {
+  return board.snakes
+    .filter((snake) => snake.id !== youId)
+    .reduce((max, snake) => Math.max(max, snake.length), 0)
+}
+
+function blockedForCandidate(
+  you: Battlesnake,
+  target: Coord,
+  board: Board,
+  occupied: Set<string>,
+  aggressive: boolean,
+): Set<string> {
+  const blocked = blockedAfterMove(you, target, board, occupied)
+  if (aggressive && isKillHead(target, you, board)) {
+    for (const snake of board.snakes) {
+      if (snake.id === you.id || snake.length >= you.length) continue
+      if (snake.head.x === target.x && snake.head.y === target.y) {
+        blocked.delete(key(snake.head))
+      }
+    }
+  }
+  return blocked
+}
+
 function hazardCells(board: Board): Set<string> {
   return new Set(board.hazards.map(key))
 }
@@ -367,15 +392,7 @@ export function chooseMove(
     if (!inBounds(target, board)) continue
     if (!canEnterCell(target, you, board, occupied, hazards, aggressive)) continue
 
-    const blocked = blockedAfterMove(you, target, board, occupied)
-    if (aggressive && isKillHead(target, you, board)) {
-      for (const snake of board.snakes) {
-        if (snake.id === you.id || snake.length >= you.length) continue
-        if (snake.head.x === target.x && snake.head.y === target.y) {
-          blocked.delete(key(snake.head))
-        }
-      }
-    }
+    const blocked = blockedForCandidate(you, target, board, occupied, aggressive)
     const space = reachableSpace(target, board, blocked)
     if (space < you.length) continue
 
@@ -423,22 +440,25 @@ export function chooseMove(
   const pool = preferred.length > 0 ? preferred : safe
 
   if (aggressive) {
-    let best = pool[0]
+    const maxEnemy = maxEnemyLength(board, you.id)
+    const growPhase = you.length <= maxEnemy || state.turn < 20
+    const huntPhase = you.length > maxEnemy
+
+    // Grow phase: avoid equal-length head-to-head; hunt phase: take calculated risks.
+    const aggressivePool =
+      growPhase && preferred.length > 0 ? preferred : pool
+
+    let best = aggressivePool[0]
     let bestScore = -Infinity
-    let shoutContext: keyof typeof LESBIAN_SHOUTS = 'default'
+    let shoutContext: keyof typeof LESBIAN_SHOUTS = growPhase ? 'food' : 'default'
 
-    for (const c of pool) {
-      let blocked = blockedAfterMove(you, c.target, board, occupied)
-      if (isKillHead(c.target, you, board)) {
-        for (const snake of board.snakes) {
-          if (snake.id === you.id || snake.length >= you.length) continue
-          if (snake.head.x === c.target.x && snake.head.y === c.target.y) {
-            blocked.delete(key(snake.head))
-          }
-        }
-      }
+    const spaceWeight = growPhase ? 2 : 0.5
+    const foodWeight = growPhase ? (state.turn < 20 ? 8 : 6) : 5
+    const riskyPenalty = growPhase ? 200 : 40
 
-      let score = c.space * 0.5
+    for (const c of aggressivePool) {
+      const blocked = blockedForCandidate(you, c.target, board, occupied, true)
+      let score = c.space * spaceWeight
 
       if (eatingAt(c.target, board)) {
         score += 80
@@ -446,25 +466,27 @@ export function chooseMove(
       } else if (board.food.length > 0) {
         const foodDist = nearestFoodPathDistance(c.target, board, blocked)
         if (foodDist !== null) {
-          score -= foodDist * 5
+          score -= foodDist * foodWeight
           if (foodDist <= 2) shoutContext = 'food'
         }
       }
 
-      for (const snake of board.snakes) {
-        if (snake.id === you.id || snake.length >= you.length) continue
-        const preyDist = bfsDistance(c.target, snake.head, board, blocked)
-        if (preyDist === null) continue
-        score -= preyDist * 4
-        if (c.target.x === snake.head.x && c.target.y === snake.head.y) {
-          score += 120
-          shoutContext = 'hunt'
-        } else if (preyDist <= 2) {
-          shoutContext = 'hunt'
+      if (huntPhase) {
+        for (const snake of board.snakes) {
+          if (snake.id === you.id || snake.length >= you.length) continue
+          const preyDist = bfsDistance(c.target, snake.head, board, blocked)
+          if (preyDist === null) continue
+          score -= preyDist * 4
+          if (c.target.x === snake.head.x && c.target.y === snake.head.y) {
+            score += 120
+            shoutContext = 'hunt'
+          } else if (preyDist <= 2) {
+            shoutContext = 'hunt'
+          }
         }
       }
 
-      if (c.risky) score -= 40
+      if (c.risky) score -= riskyPenalty
 
       if (score > bestScore) {
         bestScore = score

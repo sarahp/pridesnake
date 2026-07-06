@@ -33,13 +33,138 @@ export type Direction = 'up' | 'down' | 'left' | 'right'
 
 // The snake's identity card returned on GET /.
 // Head/tail names come from Battlesnake's customization list.
-export const snakeInfo = {
+export type SnakeInfo = {
+  apiversion: string
+  author: string
+  color: string
+  head: string
+  tail: string
+  version: string
+}
+
+export const snakeInfo: SnakeInfo = {
   apiversion: '1',
-  author: 'pridesnake',
+  author: 'SarahPeony',
   color: '#a855f7', // pride purple
-  head: 'rbc-necktie', // playful head
-  tail: 'rbc-necktie',
+  head: 'trans-rights-scarf',
+  tail: 'default',
   version: '1.0.0-pride',
+}
+
+export const lesbianSnakeInfo: SnakeInfo = {
+  ...snakeInfo,
+  color: '#D52D00',
+  head: 'trans-rights-scarf',
+  version: '1.0.0-lesbian-aggressive',
+}
+
+export type PrideHeadOption = {
+  id: string
+  battlesnakeHead: string
+  src: string
+  name: string
+  flag: string
+  color: string
+}
+
+// Gallery PNGs are site previews. In-game, all flags use the unlocked trans-rights-scarf head
+// with a flag-specific body color until more Battlesnake heads are unlocked.
+export const prideHeadOptions: PrideHeadOption[] = [
+  {
+    id: 'rainbow',
+    battlesnakeHead: 'trans-rights-scarf',
+    src: '/heads/rainbow.png',
+    name: 'Rainbow',
+    flag: 'Classic Pride',
+    color: '#750787',
+  },
+  {
+    id: 'trans',
+    battlesnakeHead: 'trans-rights-scarf',
+    src: '/heads/trans.png',
+    name: 'Azure',
+    flag: 'Trans Pride',
+    color: '#5BCEFA',
+  },
+  {
+    id: 'bi',
+    battlesnakeHead: 'trans-rights-scarf',
+    src: '/heads/bi.png',
+    name: 'Magenta',
+    flag: 'Bi Pride',
+    color: '#D60270',
+  },
+  {
+    id: 'lesbian',
+    battlesnakeHead: 'trans-rights-scarf',
+    src: '/heads/lesbian.png',
+    name: 'Sunset',
+    flag: 'Lesbian Pride',
+    color: '#D52D00',
+  },
+]
+
+export function getPrideHeadOption(style: string | null): PrideHeadOption | undefined {
+  if (!style) return undefined
+  return prideHeadOptions.find((option) => option.id === style)
+}
+
+const CUSTOMIZATION_ID = /^[a-z0-9-]+$/
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+function customizationId(value: string | null): string | undefined {
+  if (!value || !CUSTOMIZATION_ID.test(value)) return undefined
+  return value
+}
+
+function hexColor(value: string | null): string | undefined {
+  if (!value || !HEX_COLOR.test(value)) return undefined
+  return value
+}
+
+export function buildSnakeQuery(searchParams: URLSearchParams): string {
+  const params = new URLSearchParams()
+
+  const style = searchParams.get('style')
+  const prideOption = getPrideHeadOption(style)
+  if (prideOption) {
+    params.set('head', prideOption.battlesnakeHead)
+    params.set('color', prideOption.color)
+  } else {
+    const head = customizationId(searchParams.get('head'))
+    const color = hexColor(searchParams.get('color'))
+    if (head) params.set('head', head)
+    if (color) params.set('color', color)
+  }
+
+  const tail = customizationId(searchParams.get('tail'))
+  if (tail) params.set('tail', tail)
+
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
+export function buildSnakeApiPath(searchParams: URLSearchParams): string {
+  const style = searchParams.get('style')
+  // Battlesnake move requests don't carry ?style= — use a dedicated path for lesbian aggression.
+  if (style === 'lesbian') {
+    return '/api/snake/lesbian'
+  }
+  return `/api/snake${buildSnakeQuery(searchParams)}`
+}
+
+// Override defaults with ?head=, ?tail=, and ?color= on the snake URL.
+export function resolveSnakeInfo(searchParams: URLSearchParams): SnakeInfo {
+  const head = customizationId(searchParams.get('head'))
+  const tail = customizationId(searchParams.get('tail'))
+  const color = hexColor(searchParams.get('color'))
+
+  return {
+    ...snakeInfo,
+    ...(head && { head }),
+    ...(tail && { tail }),
+    ...(color && { color }),
+  }
 }
 
 const MOVES: Record<Direction, Coord> = {
@@ -72,6 +197,30 @@ function occupiedCells(board: Board): Set<string> {
   return occupied
 }
 
+function eatingAt(target: Coord, board: Board): boolean {
+  return board.food.some((f) => f.x === target.x && f.y === target.y)
+}
+
+// Occupied cells after our move: tail vacates unless we eat on that cell.
+function blockedAfterMove(
+  you: Battlesnake,
+  target: Coord,
+  board: Board,
+  baseOccupied: Set<string>,
+): Set<string> {
+  const blocked = new Set(baseOccupied)
+  const tailKey = key(you.body[you.body.length - 1])
+
+  if (eatingAt(target, board)) {
+    blocked.add(tailKey)
+  } else {
+    blocked.delete(tailKey)
+  }
+
+  blocked.delete(key(target))
+  return blocked
+}
+
 // Flood fill from a starting cell to estimate how much open space is
 // reachable. Used to avoid moves that trap the snake in a dead end.
 function reachableSpace(start: Coord, board: Board, blocked: Set<string>): number {
@@ -93,20 +242,108 @@ function reachableSpace(start: Coord, board: Board, blocked: Set<string>): numbe
   return count
 }
 
+function canReach(from: Coord, goal: Coord, board: Board, blocked: Set<string>): boolean {
+  if (from.x === goal.x && from.y === goal.y) return true
+  const seen = new Set<string>([key(from)])
+  const queue: Coord[] = [from]
+  while (queue.length > 0) {
+    const cell = queue.shift()!
+    for (const dir of Object.values(MOVES)) {
+      const next = { x: cell.x + dir.x, y: cell.y + dir.y }
+      if (next.x === goal.x && next.y === goal.y) return true
+      const k = key(next)
+      if (!inBounds(next, board) || blocked.has(k) || seen.has(k)) continue
+      seen.add(k)
+      queue.push(next)
+    }
+  }
+  return false
+}
+
 function distance(a: Coord, b: Coord) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
 }
 
-export function chooseMove(state: GameState): { move: Direction; shout: string } {
+function hazardCells(board: Board): Set<string> {
+  return new Set(board.hazards.map(key))
+}
+
+// Head-to-head into a shorter enemy's head — we win.
+function isKillHead(target: Coord, you: Battlesnake, board: Board): boolean {
+  for (const snake of board.snakes) {
+    if (snake.id === you.id) continue
+    if (snake.length < you.length && snake.head.x === target.x && snake.head.y === target.y) {
+      return true
+    }
+  }
+  return false
+}
+
+function canEnterCell(
+  target: Coord,
+  you: Battlesnake,
+  board: Board,
+  occupied: Set<string>,
+  hazards: Set<string>,
+  aggressive: boolean,
+): boolean {
+  if (hazards.has(key(target))) return false
+  if (aggressive && isKillHead(target, you, board)) return true
+  return !occupied.has(key(target))
+}
+
+const LESBIAN_SHOUTS = {
+  hunt: [
+    'head-to-head? hold my girlfriend 💋',
+    'shorter snake detected. die.',
+    'orange you glad I\'m longer 🌅',
+    'sapphic supremacy incoming',
+  ],
+  food: [
+    'that apple is mine, babe 🍎',
+    'food belongs to the gays',
+    'nom with sapphic intent',
+    'orange sunset hunger 🌅',
+  ],
+  squeeze: ['still fighting, still gay', 'tight squeeze but I\'m stubborn', 'not done yet, babe'],
+  death: ['gg, kiss kiss 💋', 'death before dishonor 🏳️‍🌈', 'fabulous to the end'],
+  default: [
+    'aggressive lesbian energy 🏳️‍🌈',
+    'sunset supremacy',
+    'she/her/slay',
+    'orange crush activated',
+  ],
+} as const
+
+function lesbianShout(context: keyof typeof LESBIAN_SHOUTS): string {
+  const pool = LESBIAN_SHOUTS[context]
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
+export type ChooseMoveOptions = {
+  aggressive?: boolean
+}
+
+export function chooseAggressiveMove(state: GameState): { move: Direction; shout: string } {
+  return chooseMove(state, { aggressive: true })
+}
+
+export function chooseMove(
+  state: GameState,
+  options: ChooseMoveOptions = {},
+): { move: Direction; shout: string } {
+  const aggressive = options.aggressive ?? false
   const { you, board } = state
   const head = you.head
   const occupied = occupiedCells(board)
+  const hazards = hazardCells(board)
 
   // Heads of larger-or-equal enemy snakes threaten head-to-head collisions.
   const dangerHeads = new Set<string>()
   for (const snake of board.snakes) {
     if (snake.id === you.id) continue
     if (snake.length >= you.length) {
+      dangerHeads.add(key(snake.head))
       for (const dir of Object.values(MOVES)) {
         dangerHeads.add(key({ x: snake.head.x + dir.x, y: snake.head.y + dir.y }))
       }
@@ -119,29 +356,105 @@ export function chooseMove(state: GameState): { move: Direction; shout: string }
   for (const move of Object.keys(MOVES) as Direction[]) {
     const target = { x: head.x + MOVES[move].x, y: head.y + MOVES[move].y }
     if (!inBounds(target, board)) continue
-    if (occupied.has(key(target))) continue
+    if (!canEnterCell(target, you, board, occupied, hazards, aggressive)) continue
 
-    const space = reachableSpace(target, board, occupied)
-    // Need at least enough room for the body to not trap itself.
-    if (space < Math.min(you.length, 4)) continue
+    const blocked = blockedAfterMove(you, target, board, occupied)
+    if (aggressive && isKillHead(target, you, board)) {
+      for (const snake of board.snakes) {
+        if (snake.id === you.id || snake.length >= you.length) continue
+        if (snake.head.x === target.x && snake.head.y === target.y) {
+          blocked.delete(key(snake.head))
+        }
+      }
+    }
+    const space = reachableSpace(target, board, blocked)
+    if (space < you.length) continue
 
     safe.push({ move, target, space, risky: dangerHeads.has(key(target)) })
   }
 
-  // Nothing safe? Fall back to any in-bounds, non-body cell, then give up left.
+  // Nothing safe? Prefer most space, then tail reachability, then any legal cell.
   if (safe.length === 0) {
+    const tail = you.body[you.body.length - 1]
+    type Fallback = { move: Direction; target: Coord; space: number; canReachTail: boolean }
+    const fallback: Fallback[] = []
+
     for (const move of Object.keys(MOVES) as Direction[]) {
       const target = { x: head.x + MOVES[move].x, y: head.y + MOVES[move].y }
-      if (inBounds(target, board) && !occupied.has(key(target))) {
-        return { move, shout: 'Yikes! Tight squeeze 🏳️‍🌈' }
+      if (!inBounds(target, board)) continue
+      if (!canEnterCell(target, you, board, occupied, hazards, aggressive)) continue
+
+      const blocked = blockedAfterMove(you, target, board, occupied)
+      fallback.push({
+        move,
+        target,
+        space: reachableSpace(target, board, blocked),
+        canReachTail: canReach(target, tail, board, blocked),
+      })
+    }
+
+    if (fallback.length > 0) {
+      const maxSpace = Math.max(...fallback.map((f) => f.space))
+      let pool = fallback.filter((f) => f.space === maxSpace)
+      const tailReachable = pool.filter((f) => f.canReachTail)
+      if (tailReachable.length > 0) pool = tailReachable
+      return {
+        move: pool[0].move,
+        shout: aggressive ? lesbianShout('squeeze') : 'Yikes! Tight squeeze 🏳️‍🌈',
       }
     }
-    return { move: 'up', shout: 'gg, it was fabulous while it lasted' }
+
+    return {
+      move: 'up',
+      shout: aggressive ? lesbianShout('death') : 'gg, it was fabulous while it lasted',
+    }
   }
 
-  // Prefer non-risky moves; among those, prefer the most open space.
   const preferred = safe.filter((c) => !c.risky)
   const pool = preferred.length > 0 ? preferred : safe
+
+  if (aggressive) {
+    let best = pool[0]
+    let bestScore = -Infinity
+    let shoutContext: keyof typeof LESBIAN_SHOUTS = 'default'
+
+    for (const c of pool) {
+      let score = c.space * 0.5
+
+      if (eatingAt(c.target, board)) {
+        score += 80
+        shoutContext = 'food'
+      } else if (board.food.length > 0) {
+        const nearestFood = board.food.reduce(
+          (min, f) => Math.min(min, distance(c.target, f)),
+          Infinity,
+        )
+        score -= nearestFood * 5
+        if (nearestFood <= 2) shoutContext = 'food'
+      }
+
+      for (const snake of board.snakes) {
+        if (snake.id === you.id || snake.length >= you.length) continue
+        const preyDist = distance(c.target, snake.head)
+        score -= preyDist * 4
+        if (c.target.x === snake.head.x && c.target.y === snake.head.y) {
+          score += 120
+          shoutContext = 'hunt'
+        } else if (preyDist <= 2) {
+          shoutContext = 'hunt'
+        }
+      }
+
+      if (c.risky) score -= 40
+
+      if (score > bestScore) {
+        bestScore = score
+        best = c
+      }
+    }
+
+    return { move: best.move, shout: lesbianShout(shoutContext) }
+  }
 
   // Hungry? Steer toward the closest food when health is getting low.
   const hungry = you.health < 40 || board.snakes.length > 1

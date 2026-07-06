@@ -1,34 +1,82 @@
 'use client'
 
 import useSWR from 'swr'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Check, Copy } from 'lucide-react'
 
-type SnakeInfo = {
-  apiversion: string
-  author: string
-  color: string
-  head: string
-  tail: string
-  version: string
-}
+import { buildSnakeApiPath, type SnakeInfo } from '@/lib/snake'
+import { useSnakeSelection } from '@/components/snake-selection-provider'
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 export function LiveSnakeInfo() {
-  const { data, error, isLoading } = useSWR<SnakeInfo>('/api/snake', fetcher, {
+  const searchParams = useSearchParams()
+  const { style } = useSnakeSelection()
+  const apiPath = useMemo(() => {
+    const params = new URLSearchParams()
+    if (style) {
+      params.set('style', style)
+    } else {
+      const head = searchParams.get('head')
+      const color = searchParams.get('color')
+      if (head) params.set('head', head)
+      if (color) params.set('color', color)
+    }
+    return buildSnakeApiPath(params)
+  }, [style, searchParams])
+
+  const { data, error, isLoading } = useSWR<SnakeInfo>(apiPath, fetcher, {
     refreshInterval: 15000,
   })
   const [copied, setCopied] = useState(false)
 
   const online = !error && !isLoading && !!data
   const status = isLoading ? 'connecting' : online ? 'online' : 'offline'
+  const displayPath = apiPath.replace('/api/snake', '<this-site>/api/snake')
 
-  async function copyUrl() {
-    const base = typeof window !== 'undefined' ? window.location.origin : ''
-    await navigator.clipboard.writeText(`${base}/api/snake`)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1800)
+  function copyUrl() {
+    const url = `${window.location.origin}${apiPath}`
+
+    const showCopied = () => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    }
+
+    const fallbackCopy = () => {
+      const onCopy = (event: ClipboardEvent) => {
+        event.preventDefault()
+        event.clipboardData?.setData('text/plain', url)
+        document.removeEventListener('copy', onCopy)
+        showCopied()
+      }
+
+      document.addEventListener('copy', onCopy)
+      const copied = document.execCommand('copy')
+      document.removeEventListener('copy', onCopy)
+
+      if (!copied) {
+        const textarea = document.createElement('textarea')
+        textarea.value = url
+        textarea.setAttribute('readonly', '')
+        textarea.style.position = 'fixed'
+        textarea.style.left = '-9999px'
+        document.body.appendChild(textarea)
+        textarea.focus()
+        textarea.select()
+        try {
+          if (document.execCommand('copy')) showCopied()
+        } finally {
+          document.body.removeChild(textarea)
+        }
+      }
+    }
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(showCopied).catch(fallbackCopy)
+    } else {
+      fallbackCopy()
+    }
   }
 
   return (
@@ -69,12 +117,12 @@ export function LiveSnakeInfo() {
           </p>
           <div className="mt-2 flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-lg bg-secondary px-3 py-2 font-mono text-sm text-secondary-foreground">
-              {'<this-site>'}/api/snake
+              {displayPath}
             </code>
             <button
               type="button"
               onClick={copyUrl}
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 font-mono text-sm text-primary-foreground transition-opacity hover:opacity-90"
+              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-3 py-2 font-mono text-sm text-primary-foreground transition-opacity hover:opacity-90"
             >
               {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
               {copied ? 'Copied' : 'Copy'}
@@ -84,7 +132,7 @@ export function LiveSnakeInfo() {
 
         <div>
           <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            GET /api/snake response
+            GET {apiPath} response
           </p>
           <pre className="mt-2 overflow-x-auto rounded-lg bg-secondary p-4 font-mono text-sm leading-relaxed text-secondary-foreground">
             {data

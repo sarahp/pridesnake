@@ -1,6 +1,9 @@
 import Image from 'next/image'
+import { Suspense } from 'react'
 import { LiveSnakeInfo } from '@/components/live-snake-info'
 import { HeadGallery } from '@/components/head-gallery'
+import { SnakeSelectionProvider } from '@/components/snake-selection-provider'
+import { prideHeadOptions } from '@/lib/snake'
 
 const RAINBOW = ['#e40303', '#ff8c00', '#ffed00', '#008026', '#004dff', '#750787']
 
@@ -27,22 +30,20 @@ export default function Page() {
       {/* Hero */}
       <header className="text-center">
         <div className="mx-auto mb-8 flex justify-center gap-3">
-          {['/heads/rainbow.png', '/heads/trans.png', '/heads/bi.png', '/heads/lesbian.png'].map(
-            (src) => (
-              <div
-                key={src}
-                className="size-14 overflow-hidden rounded-xl border border-border md:size-16"
-              >
-                <Image
-                  src={src || '/placeholder.svg'}
-                  alt=""
-                  width={64}
-                  height={64}
-                  className="size-full [image-rendering:pixelated]"
-                />
-              </div>
-            ),
-          )}
+          {prideHeadOptions.map((head) => (
+            <div
+              key={head.id}
+              className="size-14 overflow-hidden rounded-xl border border-border md:size-16"
+            >
+              <Image
+                src={head.src || '/placeholder.svg'}
+                alt=""
+                width={64}
+                height={64}
+                className="size-full [image-rendering:pixelated]"
+              />
+            </div>
+          ))}
         </div>
         <p className="font-mono text-sm uppercase tracking-[0.3em] text-accent">
           Battlesnake · Meetup Edition
@@ -59,13 +60,45 @@ export default function Page() {
         </div>
       </header>
 
-      {/* Live status */}
-      <section className="mt-20" aria-labelledby="live-heading">
-        <h2 id="live-heading" className="sr-only">
-          Live server info
-        </h2>
-        <LiveSnakeInfo />
-      </section>
+      {/* Head gallery + live preview share selection state */}
+      <Suspense
+        fallback={
+          <div className="mt-20 space-y-20">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {prideHeadOptions.map((head) => (
+                <div
+                  key={head.id}
+                  className="h-64 animate-pulse rounded-2xl border border-border bg-card"
+                />
+              ))}
+            </div>
+            <div className="h-64 animate-pulse rounded-2xl border border-border bg-card" />
+          </div>
+        }
+      >
+        <SnakeSelectionProvider>
+          <section className="mt-20" aria-labelledby="gallery-heading">
+            <h2 id="gallery-heading" className="text-2xl font-bold tracking-tight md:text-3xl">
+              Pick your pride head
+            </h2>
+            <p className="mt-2 text-muted-foreground">
+              Tap a head to build your snake URL — the preview below updates instantly. Gallery art
+              is for this site; on the Battlesnake board all flags use the trans-rights-scarf head
+              with a flag color.
+            </p>
+            <div className="mt-6">
+              <HeadGallery />
+            </div>
+          </section>
+
+          <section className="mt-20" aria-labelledby="live-heading">
+            <h2 id="live-heading" className="sr-only">
+              Live server info
+            </h2>
+            <LiveSnakeInfo />
+          </section>
+        </SnakeSelectionProvider>
+      </Suspense>
 
       {/* Endpoints */}
       <section className="mt-20" aria-labelledby="endpoints-heading">
@@ -99,19 +132,6 @@ export default function Page() {
         </div>
       </section>
 
-      {/* Head gallery */}
-      <section className="mt-20" aria-labelledby="gallery-heading">
-        <h2 id="gallery-heading" className="text-2xl font-bold tracking-tight md:text-3xl">
-          Pick your pride head
-        </h2>
-        <p className="mt-2 text-muted-foreground">
-          Every snake deserves to compete as its truest, most fabulous self.
-        </p>
-        <div className="mt-6">
-          <HeadGallery />
-        </div>
-      </section>
-
       {/* How to connect */}
       <section className="mt-20" aria-labelledby="connect-heading">
         <h2 id="connect-heading" className="text-2xl font-bold tracking-tight md:text-3xl">
@@ -120,7 +140,7 @@ export default function Page() {
         <ol className="mt-6 space-y-4">
           {[
             'Sign in at play.battlesnake.com and create a new Battlesnake.',
-            'Copy the server URL above and paste it as your snake URL.',
+            'Pick a head above, copy your snake URL, and paste it when creating your Battlesnake.',
             'Join the meetup arena or start a friendly game with the crew.',
             'Cheer as the pride-flag snakes battle for the top spot.',
           ].map((step, i) => (
